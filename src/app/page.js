@@ -1,69 +1,20 @@
-import Image from "next/image";
+"use client";
+import { useEffect, useMemo, useState } from "react";
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+import { MessageCircle, RefreshCw, Send, Smartphone } from "lucide-react";
+
+const date = (v) => v ? new Intl.DateTimeFormat("en-IN",{dateStyle:"medium",timeStyle:"short"}).format(new Date(v)) : "—";
+export default function Home(){
+  const[data,setData]=useState({comments:[],messages:[]});const[loading,setLoading]=useState(true);const[error,setError]=useState("");
+  async function load(){setLoading(true);setError("");try{const r=await fetch("/api/instagram/activity",{cache:"no-store"});const contentType=r.headers.get("content-type")||"";const b=contentType.includes("application/json")?await r.json():null;if(!r.ok)throw new Error(b?.error||`Activity API failed (${r.status} ${r.statusText})`);if(!b)throw new Error("Activity API returned an unexpected non-JSON response. Restart the Next.js server and try again.");setData(b);}catch(e){setError(e instanceof Error?e.message:"Could not load Instagram activity");}finally{setLoading(false);}}
+  useEffect(()=>{load();},[]);
+  const conversations=useMemo(()=>{const m=new Map();for(const x of [...data.messages].reverse()){if(!m.has(x.instagram_user_id))m.set(x.instagram_user_id,[]);m.get(x.instagram_user_id).push(x);}return[...m.entries()].reverse();},[data.messages]);
+  const phones=new Set(data.messages.filter(x=>x.phone_number).map(x=>x.instagram_user_id)).size;
+  return <main className="min-h-screen bg-slate-50 text-slate-900"><div className="mx-auto max-w-7xl p-6">
+    <div className="mb-6 flex items-center justify-between"><div><p className="font-semibold text-orange-600">Instagram automation</p><h1 className="text-3xl font-bold">Comments & conversations</h1></div><button onClick={load} disabled={loading} className="flex gap-2 rounded-xl bg-slate-900 px-4 py-3 text-white"><RefreshCw size={18} className={loading?"animate-spin":""}/>Refresh</button></div>
+    {error&&<p className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
+    <div className="mb-7 grid gap-4 sm:grid-cols-3">{[[MessageCircle,"Comments",data.comments.length],[Send,"Messages",data.messages.length],[Smartphone,"Numbers collected",phones]].map(([Icon,label,n])=><div key={label} className="rounded-2xl border bg-white p-5"><Icon className="text-orange-500"/><p className="mt-3 text-slate-500">{label}</p><p className="text-3xl font-bold">{n}</p></div>)}</div>
+    <section className="mb-8 overflow-hidden rounded-2xl border bg-white"><h2 className="p-5 text-xl font-bold">Post comments</h2><div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-100"><tr><th className="p-4">Post</th><th className="p-4">User & comment</th><th className="p-4">Public reply</th><th className="p-4">DM reply</th><th className="p-4">Time</th></tr></thead><tbody>{data.comments.map(x=><tr key={x.comment_id} className="border-t align-top"><td className="p-4 font-mono text-xs">{x.media_id||"—"}</td><td className="p-4"><b>@{x.username||x.instagram_user_id||"unknown"}</b><p>{x.comment_text}</p></td><td className="p-4">{x.public_reply||"—"}<p className="text-xs text-slate-500">{x.public_reply_status}</p></td><td className="p-4">{x.private_reply||"—"}<p className="text-xs text-slate-500">{x.private_reply_status}</p></td><td className="p-4">{date(x.commented_at||x.created_at)}</td></tr>)}</tbody></table>{!loading&&!data.comments.length&&<p className="p-8 text-center text-slate-500">No comments received yet.</p>}</div></section>
+    <h2 className="mb-4 text-xl font-bold">DM conversations</h2><div className="grid gap-4 lg:grid-cols-2">{conversations.map(([id,msgs])=><article key={id} className="rounded-2xl border bg-white p-5"><div className="mb-4 border-b pb-3"><b>@{msgs[0]?.username||id}</b>{msgs[0]?.phone_number&&<span className="ml-3 rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-700">{msgs[0].phone_number}</span>}</div><div className="max-h-96 space-y-2 overflow-auto">{msgs.map(m=><div key={m.message_id} className={`flex ${m.direction==="outbound"?"justify-end":"justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 ${m.direction==="outbound"?"bg-orange-500 text-white":"bg-slate-100"}`}><p>{m.message_text||"[Media]"}</p><small>{date(m.sent_at||m.created_at)}</small></div></div>)}</div></article>)}</div>
+  </div></main>;
 }
