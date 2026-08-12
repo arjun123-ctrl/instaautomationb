@@ -23,6 +23,7 @@ export default function Home() {
       if (!response.ok) throw new Error(body?.error || `Activity API failed (${response.status})`);
       if (!body) throw new Error("Activity API returned an unexpected response.");
       setData(body);
+      if (body.syncWarning) setError(`Instagram sync failed: ${body.syncWarning}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load Instagram activity");
     } finally {

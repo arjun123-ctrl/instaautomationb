@@ -83,7 +83,8 @@ function shouldStopReplying(text, hasPhone) {
   return /^(ok+|oh+k+|okay|k|hm+|hmm+|yes|done|fine|alright|thik|thik hai|theek|theek hai|acha|achha|accha|thanks|thank you|dhanyavad|dhanyawad)$/.test(value);
 }
 function replyFor(text, hasPhone, justFound) {
-  if (shouldStopReplying(text, hasPhone)) return null;
+  if (justFound) return "Thanks For Sharing Your Contact Number Our Team Will connect You";
+  if (hasPhone || shouldStopReplying(text, false)) return null;
   const lang = language(text);
   if (!hasPhone) return lang === "hi" ? "कृपया अपना 10 अंकों का संपर्क नंबर साझा करें।" : lang === "hinglish" ? "Please apna 10-digit contact number share kar dijiye." : "Please share your 10-digit contact number.";
   if (justFound) return lang === "hi" ? "धन्यवाद! आपका नंबर मिल गया है। हमारी टीम जल्द आपसे संपर्क करेगी।" : lang === "hinglish" ? "Thank you! Aapka number mil gaya hai. Hamari team jaldi connect karegi." : "Thank you! We received your number. Our team will contact you shortly.";

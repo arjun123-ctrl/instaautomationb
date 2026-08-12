@@ -51,6 +51,11 @@ export function getContact(instagramUserId) {
   return state.contacts.get(instagramUserId);
 }
 
+export function replaceInstagramInbox({ contacts, messages }) {
+  state.messages = new Map(messages.map((message) => [message.message_id, message]));
+  for (const contact of contacts) saveContact(contact.instagram_user_id, contact);
+}
+
 export function getActivity() {
   const comments = [...state.comments.values()]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
