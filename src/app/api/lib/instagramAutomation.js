@@ -100,6 +100,7 @@ export async function handleComment(value) {
   const own = await profile();
   if ([own.id, String(process.env.IG_USER_ID || ""), String(process.env.IG_WEBHOOK_ACCOUNT_ID || "")].includes(senderId) || username.toLowerCase() === own.username) return console.info("[Instagram] Own comment ignored", { id });
   if (!(await claim(`comment:${id}`, "comment"))) return console.info("[Instagram] Duplicate comment ignored", { id });
+  if (senderId && username) saveContact(senderId, { username });
   console.info("[Instagram] Processing comment", { id, senderId, username, text: value?.text || "" });
   const publicReply = process.env.IG_COMMENT_REPLY || "Kindly check DM";
   const privateReply = process.env.IG_CONTACT_REQUEST || "Please share your contact number.";

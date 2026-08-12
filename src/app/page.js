@@ -1,20 +1,78 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
 
+import { useEffect, useMemo, useState } from "react";
 import { MessageCircle, RefreshCw, Send, Smartphone } from "lucide-react";
 
-const date = (v) => v ? new Intl.DateTimeFormat("en-IN",{dateStyle:"medium",timeStyle:"short"}).format(new Date(v)) : "—";
-export default function Home(){
-  const[data,setData]=useState({comments:[],messages:[]});const[loading,setLoading]=useState(true);const[error,setError]=useState("");
-  async function load(){setLoading(true);setError("");try{const r=await fetch("/api/instagram/activity",{cache:"no-store"});const contentType=r.headers.get("content-type")||"";const b=contentType.includes("application/json")?await r.json():null;if(!r.ok)throw new Error(b?.error||`Activity API failed (${r.status} ${r.statusText})`);if(!b)throw new Error("Activity API returned an unexpected non-JSON response. Restart the Next.js server and try again.");setData(b);}catch(e){setError(e instanceof Error?e.message:"Could not load Instagram activity");}finally{setLoading(false);}}
-  useEffect(()=>{load();},[]);
-  const conversations=useMemo(()=>{const m=new Map();for(const x of [...data.messages].reverse()){if(!m.has(x.instagram_user_id))m.set(x.instagram_user_id,[]);m.get(x.instagram_user_id).push(x);}return[...m.entries()].reverse();},[data.messages]);
-  const phones=new Set(data.messages.filter(x=>x.phone_number).map(x=>x.instagram_user_id)).size;
+const formatDate = (value) => value
+  ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+  : "—";
+
+export default function Home() {
+  const [data, setData] = useState({ comments: [], messages: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/instagram/activity", { cache: "no-store" });
+      const isJson = (response.headers.get("content-type") || "").includes("application/json");
+      const body = isJson ? await response.json() : null;
+      if (!response.ok) throw new Error(body?.error || `Activity API failed (${response.status})`);
+      if (!body) throw new Error("Activity API returned an unexpected response.");
+      setData(body);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load Instagram activity");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Initial client-side synchronization with the activity endpoint.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, []);
+
+  const conversations = useMemo(() => {
+    const grouped = new Map();
+    const usernames = new Map(
+      data.comments
+        .filter((comment) => comment.instagram_user_id && comment.username)
+        .map((comment) => [comment.instagram_user_id, comment.username]),
+    );
+
+    for (const message of [...data.messages].reverse()) {
+      const id = message.instagram_user_id;
+      if (!grouped.has(id)) {
+        grouped.set(id, {
+          id,
+          username: message.username || usernames.get(id),
+          phone: message.phone_number,
+          messages: [],
+        });
+      }
+      const conversation = grouped.get(id);
+      conversation.username ||= message.username || usernames.get(id);
+      conversation.phone ||= message.phone_number;
+      conversation.messages.push(message);
+    }
+    return [...grouped.values()].reverse();
+  }, [data]);
+
+  const activeId = selectedId || conversations[0]?.id;
+  const selected = conversations.find((conversation) => conversation.id === activeId);
+  const phones = conversations.filter((conversation) => conversation.phone).length;
+
   return <main className="min-h-screen bg-slate-50 text-slate-900"><div className="mx-auto max-w-7xl p-6">
-    <div className="mb-6 flex items-center justify-between"><div><p className="font-semibold text-orange-600">Instagram automation</p><h1 className="text-3xl font-bold">Comments & conversations</h1></div><button onClick={load} disabled={loading} className="flex gap-2 rounded-xl bg-slate-900 px-4 py-3 text-white"><RefreshCw size={18} className={loading?"animate-spin":""}/>Refresh</button></div>
-    {error&&<p className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
-    <div className="mb-7 grid gap-4 sm:grid-cols-3">{[[MessageCircle,"Comments",data.comments.length],[Send,"Messages",data.messages.length],[Smartphone,"Numbers collected",phones]].map(([Icon,label,n])=><div key={label} className="rounded-2xl border bg-white p-5"><Icon className="text-orange-500"/><p className="mt-3 text-slate-500">{label}</p><p className="text-3xl font-bold">{n}</p></div>)}</div>
-    <section className="mb-8 overflow-hidden rounded-2xl border bg-white"><h2 className="p-5 text-xl font-bold">Post comments</h2><div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-100"><tr><th className="p-4">Post</th><th className="p-4">User & comment</th><th className="p-4">Public reply</th><th className="p-4">DM reply</th><th className="p-4">Time</th></tr></thead><tbody>{data.comments.map(x=><tr key={x.comment_id} className="border-t align-top"><td className="p-4 font-mono text-xs">{x.media_id||"—"}</td><td className="p-4"><b>@{x.username||x.instagram_user_id||"unknown"}</b><p>{x.comment_text}</p></td><td className="p-4">{x.public_reply||"—"}<p className="text-xs text-slate-500">{x.public_reply_status}</p></td><td className="p-4">{x.private_reply||"—"}<p className="text-xs text-slate-500">{x.private_reply_status}</p></td><td className="p-4">{date(x.commented_at||x.created_at)}</td></tr>)}</tbody></table>{!loading&&!data.comments.length&&<p className="p-8 text-center text-slate-500">No comments received yet.</p>}</div></section>
-    <h2 className="mb-4 text-xl font-bold">DM conversations</h2><div className="grid gap-4 lg:grid-cols-2">{conversations.map(([id,msgs])=><article key={id} className="rounded-2xl border bg-white p-5"><div className="mb-4 border-b pb-3"><b>@{msgs[0]?.username||id}</b>{msgs[0]?.phone_number&&<span className="ml-3 rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-700">{msgs[0].phone_number}</span>}</div><div className="max-h-96 space-y-2 overflow-auto">{msgs.map(m=><div key={m.message_id} className={`flex ${m.direction==="outbound"?"justify-end":"justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 ${m.direction==="outbound"?"bg-orange-500 text-white":"bg-slate-100"}`}><p>{m.message_text||"[Media]"}</p><small>{date(m.sent_at||m.created_at)}</small></div></div>)}</div></article>)}</div>
+    <div className="mb-6 flex items-center justify-between gap-4"><div><p className="font-semibold text-orange-600">Instagram automation</p><h1 className="text-3xl font-bold">Instagram inbox</h1></div><button onClick={load} disabled={loading} className="flex gap-2 rounded-xl bg-slate-900 px-4 py-3 text-white"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/>Refresh</button></div>
+    {error && <p className="mb-5 rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
+    <div className="mb-7 grid gap-4 sm:grid-cols-3">{[[MessageCircle, "Conversations", conversations.length], [Send, "Messages", data.messages.length], [Smartphone, "Numbers collected", phones]].map(([Icon, label, number]) => <div key={label} className="rounded-2xl border bg-white p-5"><Icon className="text-orange-500"/><p className="mt-3 text-slate-500">{label}</p><p className="text-3xl font-bold">{number}</p></div>)}</div>
+
+    <section className="grid min-h-[560px] overflow-hidden rounded-2xl border bg-white md:grid-cols-[320px_1fr]">
+      <aside className="border-b md:border-b-0 md:border-r"><h2 className="border-b p-5 text-xl font-bold">Chats</h2><div className="max-h-[500px] overflow-auto">{conversations.map((conversation) => <button key={conversation.id} onClick={() => setSelectedId(conversation.id)} className={`w-full border-b p-4 text-left transition ${activeId === conversation.id ? "bg-orange-50" : "hover:bg-slate-50"}`}><p className="font-bold">@{conversation.username || "Instagram user"}</p><p className="mt-1 truncate text-sm text-slate-500">{conversation.messages.at(-1)?.message_text || "[Media]"}</p></button>)}{!loading && !conversations.length && <p className="p-6 text-sm text-slate-500">No conversations yet.</p>}</div></aside>
+
+      <div className="flex min-h-[560px] flex-col">{selected ? <><header className="border-b p-5"><div className="flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-orange-400 to-pink-600 font-bold text-white">{(selected.username || "I")[0].toUpperCase()}</div><div><h2 className="font-bold">@{selected.username || "Instagram user"}</h2>{selected.phone && <p className="text-sm text-emerald-600">{selected.phone}</p>}</div></div></header><div className="flex-1 space-y-3 overflow-auto bg-slate-50 p-5">{selected.messages.map((message) => <div key={message.message_id} className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}><div className={`max-w-[75%] rounded-2xl px-4 py-3 ${message.direction === "outbound" ? "bg-orange-500 text-white" : "border bg-white"}`}><p>{message.message_text || "[Media]"}</p><small className={message.direction === "outbound" ? "text-orange-100" : "text-slate-400"}>{formatDate(message.sent_at || message.created_at)}</small></div></div>)}</div></> : <div className="grid flex-1 place-items-center text-slate-500">Select a chat from the left</div>}</div>
+    </section>
   </div></main>;
 }
