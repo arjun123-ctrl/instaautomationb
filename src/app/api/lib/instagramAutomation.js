@@ -8,6 +8,10 @@ import {
   saveMessage,
   updateComment,
 } from "@/app/api/lib/instagramStore";
+import {
+  recordConversationStart,
+  recordSharedPhone,
+} from "@/app/api/lib/instagramConversation";
 
 const VERSION = process.env.IG_API_VERSION || "v25.0";
 const BASE = `https://graph.instagram.com/${VERSION}`;
@@ -132,6 +136,7 @@ export async function handleComment(value, receivingAccountId) {
         recipientId: privateResult?.recipient_id || null,
         messageId: privateResult?.message_id || null,
       });
+      await recordConversationStart(senderId, new Date(), username || null);
       updateComment(id, { private_reply_status: "sent" });
       if (senderId) saveMessage({ message_id:`private:${id}`, instagram_user_id:senderId, direction:"outbound", message_text:privateReply, related_event_id:id, sent_status:"sent", sent_at:new Date() });
     } catch (error) {
@@ -157,7 +162,11 @@ export async function handleMessage(event) {
     if (!text.trim()) { await finish(`message:${mid}`, "complete"); return console.info("[Instagram] Non-text companion ignored", { mid }); }
     const contact = getContact(sender);
     const found = phoneFrom(text); const existing = Boolean(contact?.phone_number);
-    if (found && !existing) saveContact(sender, { phone_number:found, phone_collected_at:new Date() });
+    if (found && !existing) {
+      const sharedAt = new Date(timeMs(event?.timestamp));
+      saveContact(sender, { phone_number:found, phone_collected_at:sharedAt });
+      await recordSharedPhone(sender, found, sharedAt);
+    }
     const reply = replyFor(text, existing || Boolean(found), Boolean(found && !existing));
     if (!reply) {
       await finish(`message:${mid}`, "complete");
@@ -165,6 +174,11 @@ export async function handleMessage(event) {
     }
     const own = await profile();
     const result = await graphPost(`${encodeURIComponent(own.id)}/messages`, { recipient: { id: sender }, message: { text: reply } });
+    await recordConversationStart(
+      sender,
+      new Date(),
+      event?.sender?.username || event?.sender?.name || null
+    );
     saveMessage({ message_id:String(result?.message_id || `reply:${mid}`), instagram_user_id:sender, direction:"outbound", message_text:reply, related_event_id:mid, sent_status:"sent", sent_at:new Date() });
     await finish(`message:${mid}`, "complete");
   } catch (error) { await finish(`message:${mid}`, "failed", error); throw error; }
