@@ -8,11 +8,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     let syncWarning = null;
-    try {
-      await syncInstagramInbox();
-    } catch (error) {
-      syncWarning = error instanceof Error ? error.message : "Instagram inbox sync failed";
-      console.error("[Instagram sync] Existing local inbox retained", error);
+    if (process.env.IG_ENABLE_INBOX_SYNC === "true") {
+      try {
+        await syncInstagramInbox();
+      } catch (error) {
+        syncWarning = error instanceof Error ? error.message : "Instagram inbox sync failed";
+        console.error("[Instagram sync] Existing local inbox retained", error);
+      }
     }
     return NextResponse.json({ ...getActivity(), syncWarning });
   } catch (error) {

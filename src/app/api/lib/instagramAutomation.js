@@ -12,7 +12,7 @@ import {
 const VERSION = process.env.IG_API_VERSION || "v25.0";
 const BASE = `https://graph.instagram.com/${VERSION}`;
 let schemaPromise;
-let profilePromise;
+let accountPromise;
 
 export function ensureInstagramSchema() {
   if (!schemaPromise) schemaPromise = Promise.resolve();
@@ -27,17 +27,6 @@ export function verifyMetaSignature(raw, signature) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-async function profile() {
-  if (!profilePromise) profilePromise = fetch(`${BASE}/me?fields=id,username`, {
-    headers: { Authorization: `Bearer ${process.env.IG_ACCESS_TOKEN}` }, cache: "no-store",
-  }).then(async (response) => {
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.id) throw new Error(data?.error?.message || "Instagram profile unavailable");
-    return { id: String(data.id), username: String(data.username || "").toLowerCase() };
-  }).catch((error) => { profilePromise = null; throw error; });
-  return profilePromise;
-}
-
 async function graphPost(path, payload) {
   const response = await fetch(`${BASE}/${path}`, {
     method: "POST", headers: { Authorization: `Bearer ${process.env.IG_ACCESS_TOKEN}`, "Content-Type": "application/json" },
@@ -45,12 +34,29 @@ async function graphPost(path, payload) {
   });
   const data = await response.json().catch(() => ({}));
   console.info("[Instagram API] Response", { path, status: response.status, ok: response.ok, error: data?.error?.message || null });
-  if (!response.ok) throw new Error(data?.error?.message || `Instagram API ${response.status}`);
+  if (!response.ok) {
+    const details = [data?.error?.message || `Instagram API ${response.status}`];
+    if (data?.error?.code) details.push(`code=${data.error.code}`);
+    if (data?.error?.error_subcode) details.push(`subcode=${data.error.error_subcode}`);
+    throw new Error(details.join("; "));
+  }
   return data;
 }
 
 async function claim(key, type) {
   return claimEvent(key, type);
+}
+
+async function profile() {
+  if (!accountPromise) accountPromise = fetch(`${BASE}/me?fields=id,username`, {
+    headers: { Authorization: `Bearer ${process.env.IG_ACCESS_TOKEN}` },
+    cache: "no-store",
+  }).then(async (response) => {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.id) throw new Error(data?.error?.message || "Instagram account unavailable");
+    return { id: String(data.id), username: String(data.username || "").toLowerCase() };
+  }).catch((error) => { accountPromise = null; throw error; });
+  return accountPromise;
 }
 async function finish(key, status, error = null) {
   finishEvent(key, status, error ? String(error).slice(0, 2000) : null);
@@ -92,14 +98,15 @@ function replyFor(text, hasPhone, justFound) {
   return lang === "hi" ? "आपकी जानकारी टीम के पास है। वे जल्द आपसे संपर्क करेंगे।" : lang === "hinglish" ? "Aapki details team ke paas hain. Woh jaldi connect karenge." : "Your details are with our team. They will contact you shortly.";
 }
 
-export async function handleComment(value) {
+export async function handleComment(value, receivingAccountId) {
   const id = String(value?.id || value?.comment_id || "");
   const senderId = String(value?.from?.id || value?.user_id || "");
   const username = value?.from?.username || value?.username || "";
   const parentId = String(value?.parent_id || value?.parent?.id || "");
   if (!id || parentId) return console.info("[Instagram] Comment ignored", { id, parentId });
   const own = await profile();
-  if ([own.id, String(process.env.IG_USER_ID || ""), String(process.env.IG_WEBHOOK_ACCOUNT_ID || "")].includes(senderId) || username.toLowerCase() === own.username) return console.info("[Instagram] Own comment ignored", { id });
+  const ownId = own.id;
+  if ([ownId, String(receivingAccountId || ""), String(process.env.IG_USER_ID || ""), String(process.env.IG_WEBHOOK_ACCOUNT_ID || "")].includes(senderId) || username.toLowerCase() === own.username) return console.info("[Instagram] Own comment ignored", { id });
   if (!(await claim(`comment:${id}`, "comment"))) return console.info("[Instagram] Duplicate comment ignored", { id });
   if (senderId && username) saveContact(senderId, { username });
   console.info("[Instagram] Processing comment", { id, senderId, username, text: value?.text || "" });
@@ -107,11 +114,32 @@ export async function handleComment(value) {
   const privateReply = process.env.IG_CONTACT_REQUEST || "Please share your contact number.";
   try {
     saveComment({ comment_id:id, media_id:value?.media?.id || value?.media_id || null, instagram_user_id:senderId || null, username:username || null, comment_text:value?.text || "", public_reply:publicReply, private_reply:privateReply, public_reply_status:"pending", private_reply_status:"pending", commented_at:new Date(timeMs(value?.created_time)) });
-    await graphPost(`${encodeURIComponent(id)}/replies`, { message: publicReply });
-    updateComment(id, { public_reply_status: "sent" });
-    await graphPost(`${encodeURIComponent(own.id)}/messages`, { recipient: { comment_id: id }, message: { text: privateReply } });
-    updateComment(id, { private_reply_status: "sent" });
-    if (senderId) saveMessage({ message_id:`private:${id}`, instagram_user_id:senderId, direction:"outbound", message_text:privateReply, related_event_id:id, sent_status:"sent", sent_at:new Date() });
+    const errors = [];
+    try {
+      await graphPost(`${encodeURIComponent(id)}/replies`, { message: publicReply });
+      updateComment(id, { public_reply_status: "sent" });
+    } catch (error) {
+      errors.push(error);
+      updateComment(id, { public_reply_status: "failed" });
+      console.error("[Instagram] Public comment reply failed", { id, error: String(error) });
+    }
+    try {
+      if (!ownId) throw new Error("Instagram receiving account ID is missing");
+      const privateResult = await graphPost(`${encodeURIComponent(ownId)}/messages`, { recipient: { comment_id: id }, message: { text: privateReply } });
+      console.info("[Instagram] Private reply accepted", {
+        commentId: id,
+        commenterId: senderId,
+        recipientId: privateResult?.recipient_id || null,
+        messageId: privateResult?.message_id || null,
+      });
+      updateComment(id, { private_reply_status: "sent" });
+      if (senderId) saveMessage({ message_id:`private:${id}`, instagram_user_id:senderId, direction:"outbound", message_text:privateReply, related_event_id:id, sent_status:"sent", sent_at:new Date() });
+    } catch (error) {
+      errors.push(error);
+      updateComment(id, { private_reply_status: "failed" });
+      console.error("[Instagram] Private comment reply failed", { id, ownId, error: String(error) });
+    }
+    if (errors.length === 2) throw errors[0];
     await finish(`comment:${id}`, "complete");
     console.info("[Instagram] Comment complete", { id });
   } catch (error) { await finish(`comment:${id}`, "failed", error); console.error("[Instagram] Comment failed",{id,error:String(error)}); throw error; }

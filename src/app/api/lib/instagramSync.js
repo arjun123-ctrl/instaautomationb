@@ -28,19 +28,20 @@ async function getAllPages(url, field = "data") {
 export async function syncInstagramInbox() {
   if (!process.env.IG_ACCESS_TOKEN) throw new Error("IG_ACCESS_TOKEN is missing");
   const me = await graphGet(`${BASE}/me?fields=id,username`);
-  const conversationUrl = `${BASE}/${encodeURIComponent(me.id)}/conversations?platform=instagram&fields=id,participants&limit=100`;
+  const accountId = String(me.id);
+  const conversationUrl = `${BASE}/${encodeURIComponent(accountId)}/conversations?platform=instagram&fields=id,participants&limit=100`;
   const conversations = await getAllPages(conversationUrl);
   const contacts = [];
   const messages = [];
 
   for (const conversation of conversations) {
     const participants = conversation?.participants?.data || [];
-    const other = participants.find((participant) => String(participant.id) !== String(me.id));
+    const other = participants.find((participant) => String(participant.id) !== String(accountId));
     const detailUrl = `${BASE}/${encodeURIComponent(conversation.id)}?fields=messages.limit(100){id,message,from,to,created_time}`;
     const conversationMessages = await getAllPages(detailUrl, "messages");
     const participantId = String(other?.id || conversationMessages
       .flatMap((message) => [message.from, ...(message.to?.data || message.to || [])])
-      .find((participant) => participant?.id && String(participant.id) !== String(me.id))?.id || "");
+      .find((participant) => participant?.id && String(participant.id) !== String(accountId))?.id || "");
     if (!participantId) continue;
 
     contacts.push({ instagram_user_id: participantId, username: other?.username || other?.name });
@@ -49,7 +50,7 @@ export async function syncInstagramInbox() {
       messages.push({
         message_id: String(message.id),
         instagram_user_id: participantId,
-        direction: senderId === String(me.id) ? "outbound" : "inbound",
+        direction: senderId === String(accountId) ? "outbound" : "inbound",
         message_text: message.message || "",
         sent_status: "sent",
         sent_at: message.created_time ? new Date(message.created_time) : new Date(),
