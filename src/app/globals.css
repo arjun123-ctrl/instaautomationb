@@ -25,6 +25,13 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+.brand-site { background: linear-gradient(140deg, #fffaf4 0%, #fff 42%, #fff4ed 100%); }
+.brand-glow { pointer-events: none; position: absolute; border-radius: 9999px; filter: blur(6px); opacity: .55; }
+.brand-glow-left { top: 8rem; left: -11rem; width: 27rem; height: 27rem; background: radial-gradient(circle, #fdba74, transparent 67%); }
+.brand-glow-right { top: 14rem; right: -13rem; width: 31rem; height: 31rem; background: radial-gradient(circle, #fda4af, transparent 68%); }
+.legal-copy h2 { margin-top: 2rem; color: #0f172a; font-size: 1.25rem; font-weight: 800; }
+.legal-copy a { color: #c2410c; font-weight: 700; text-decoration: underline; }
+
 .inbox-canvas { background: linear-gradient(135deg, #fff7ed 0%, #fdf2f8 35%, #eef2ff 70%, #ecfeff 100%); }
 .orb { position: absolute; border-radius: 9999px; filter: blur(10px); opacity: .55; pointer-events: none; animation: float-orb 12s ease-in-out infinite alternate; }
 .orb-one { width: 26rem; height: 26rem; left: -10rem; top: -8rem; background: radial-gradient(circle, #fb7185, transparent 68%); }
